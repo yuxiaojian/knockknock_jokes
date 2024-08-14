@@ -41,3 +41,10 @@ python agent_graph.py
 ```
 
 The app will create a `chroma` folder to store the told jokes. 
+
+### Known issue
+Even LLM can run out of ideas :satisfied:. If you keep asking "tell me a joke", as the vector store growing, you may see this error. 
+```bash
+langgraph.errors.GraphRecursionError: Recursion limit of 25 reached without hitting a stop condition. You can increase the limit by setting the `recursion_limit` config key.
+```
+That mean the LLM can't work out a new joke after many iterations. So instead of asking "tell me a joke", try to give some hints to the model, like "tell me a joke about xxx"

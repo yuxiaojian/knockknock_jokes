@@ -192,7 +192,7 @@ class JokeAgent():
             logging.info("---DECISION: NEED A JOKE ---")
             msg = [
                 HumanMessage(
-                    content=f"{messages[0].content} but not the same as '{response['starter_joke']}'",
+                    content=f"{response['starter_joke']}",
                 )
             ]
             return {"messages": msg}
