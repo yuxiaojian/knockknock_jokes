@@ -48,36 +48,40 @@ class JokeAgent():
     """
     def __init_vector_store(self):
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-        chroma_client = chromadb.Client(settings=CHROMA_SETTINGS)
+        chroma_client = chromadb.PersistentClient(settings=CHROMA_SETTINGS, path="chroma")
         vector_store = Chroma(client=chroma_client, collection_name="jokes", embedding_function=embeddings)
+        logging.info("There are %d docs in the collection" % vector_store._collection.count())
 
-        # Add some documents to the vector store
-        document_1 = Document(
-            page_content="Caterpillar. Caterpillar really slow, but watch me turn into a butterfly and steal the show.",
-            id=1,
-        )
+        if len(vector_store.get(limit=1).get("documents", [])) == 0:
+            logging.warning("The vector database is empty.")
 
-        document_2 = Document(
-            page_content="Cargo. Cargo 'vroom vroom', but planes go 'zoom zoom'!",
-            id=2,
-        )
+        # # Add some documents to the vector store
+        # document_1 = Document(
+        #     page_content="Caterpillar. Caterpillar really slow, but watch me turn into a butterfly and steal the show.",
+        #     id=1,
+        # )
 
-        document_3 = Document(
-            page_content="Why did the tornado break up with the hurricane? Because it couldn't handle the emotional whirlwind!",
-            id=3,
-        )
+        # document_2 = Document(
+        #     page_content="Cargo. Cargo 'vroom vroom', but planes go 'zoom zoom'!",
+        #     id=2,
+        # )
 
-        documents = [
-            document_1,
-            document_2,
-            document_3
-        ]
+        # document_3 = Document(
+        #     page_content="Why did the tornado break up with the hurricane? Because it couldn't handle the emotional whirlwind!",
+        #     id=3,
+        # )
 
-        uuids = [str(uuid4()) for _ in range(len(documents))]
+        # documents = [
+        #     document_1,
+        #     document_2,
+        #     document_3
+        # ]
 
-        vector_store.add_documents(documents=documents, ids=uuids)
+        # uuids = [str(uuid4()) for _ in range(len(documents))]
 
-        return vector_store
+        # vector_store.add_documents(documents=documents, ids=uuids)
+
+        return chroma_client, vector_store
     
     def __init_graph(self):
         """
@@ -111,12 +115,35 @@ class JokeAgent():
 
 
     def __init__(self) -> None:
-        self.__vector_store= self.__init_vector_store()
+        self.__chroma_client, self.__vector_store= self.__init_vector_store()
         self.__retriever = self.__vector_store.as_retriever(
                 search_type="mmr", search_kwargs={"k": 20}
             )
         self.graph = self.__init_graph()
     
+    def dump_vector_store(self):
+
+        # List all collections in the database
+        collections = self.__chroma_client.list_collections()
+
+        # Iterate through each collection
+        for collection in collections:
+            print(f"Collection: {collection.name}")
+            
+            # Get all documents in the collection
+            results = collection.get(include=['documents', 'metadatas'])
+            
+            # Print each document
+            for i, doc in enumerate(results['documents']):
+                print(f"\nDocument {i + 1}:")
+                print(f"Content: {doc}")
+                if 'metadatas' in results:
+                    print(f"Metadata: {results['metadatas'][i]}")
+                print("-" * 50)
+
+            print("\n" + "=" * 50 + "\n")
+
+
     # initial agent node
     def __agent(self, state):
         """
@@ -180,8 +207,10 @@ class JokeAgent():
         messages = state["messages"]
         last_message = messages[-1]
         if last_message.type == "human":
+            logging.info("---DECISION: JOKE TELLER ---")
             return "joke_teller"
         else:
+            logging.info("---DECISION: END ---")
             return END
 
     # Joke Teller node
@@ -206,7 +235,7 @@ class JokeAgent():
         example_user: Tell me a joke about planes
         example_assistant: {{"setup": "Why don't planes ever get tired?", "punchline": "Because they have rest wings!", "rating": 2}}
 
-        example_user: Tell me another joke about planes
+        example_user: Tell me another joke about cargo
         example_assistant: {{"setup": "Cargo", "punchline": "Cargo 'vroom vroom', but planes go 'zoom zoom'!", "rating": 10}}
 
         example_user: Now about caterpillars
@@ -224,7 +253,10 @@ class JokeAgent():
         chain =  prompt | model
         response = chain.invoke({"old_jokes": messages[-1].content, "user_input": messages[0].content})
         # Add the response to the messages
-        return {"messages": [ AIMessage(content=f"{response['setup']} {response['punchline']}") ]}
+
+        joke = f"{response['setup']} {response['punchline']}"
+        logging.info(f"---JOKE TELLER RESPONSE: {joke}---")
+        return {"messages": [ AIMessage(content=joke) ]}
     
     # Edge to decide whether a repetitive
     def __grade_jokes(self, state)-> Literal["rewrite", END]:
@@ -263,6 +295,14 @@ class JokeAgent():
         messages = state["messages"]
         new_joke = messages[-1].content
 
+        # Print the prompt for DEBUGGING purposes
+        # chain = (
+        #     {"old_jokes": self.__retriever | format_docs, "new_joke": RunnablePassthrough()}
+        #     | prompt)
+        # formed_prompt = chain.invoke(new_joke)
+        # logging.info(f"---FORMED PROMPT: {formed_prompt}---")
+
+        # retriever chain
         chain = (
             {"old_jokes": self.__retriever | format_docs, "new_joke": RunnablePassthrough()}
             | prompt 
@@ -280,7 +320,10 @@ class JokeAgent():
         else:
             logging.info("---DECISION: A NEW JOKE ---")
             # add the new joke to the vector store
-            self.__vector_store.add_documents(documents=[Document(page_content=new_joke)], ids=str(uuid4()))
+            self.__vector_store.add_documents(documents=[Document(page_content=new_joke)], ids=[str(uuid4())])
+            logging.info("There are %d docs in the collection" % self.__vector_store._collection.count())
+            logging.info("---UPDATED VECTOR STORE WITH THE NEW JOKE ---")
+            logging.info(f"NEW JOKE: {new_joke}")
             return END
         
     def __rewrite(self, state):
@@ -297,10 +340,10 @@ class JokeAgent():
         logging.info("---REWRITE THE JOKE---")
         messages = state["messages"]
         new_joke = messages[-1].content
-        logging.info(f"new_joke:{new_joke}")
+        logging.info(f"NEW JOKE:\n{new_joke}")
 
         old_jokes = format_docs(self.__retriever.invoke(new_joke))
-        logging.info(f"old_jokes:{old_jokes}")
+        logging.info(f"OLD JOKES:\n{old_jokes}")
         # question = messages[0].content
         
         msg = [
@@ -312,8 +355,10 @@ class JokeAgent():
         return {"messages": msg }
 
 
-if __name__ == '__main__':
-    # Initialize the agent
+def test_joke_agent():
+    """
+    Test the joke agent
+    """
     agent = JokeAgent()
 
     inputs = {
@@ -328,3 +373,12 @@ if __name__ == '__main__':
             pprint.pprint("---")
             pprint.pprint(value, indent=2, width=80, depth=None)
         pprint.pprint("\n---\n")
+
+def dump_stored_jokes():
+    agent = JokeAgent()
+    agent.dump_vector_store()
+
+if __name__ == '__main__':
+    # Initialize the agent
+    #test_joke_agent()
+    dump_stored_jokes()

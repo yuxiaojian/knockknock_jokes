@@ -10,7 +10,7 @@ OPENAI_MODEL="gpt-4o-mini"
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
     anonymized_telemetry=False,
-    is_persistent=False,
+    is_persistent=True,
 )
 
 # logging config
