@@ -1,7 +1,7 @@
 # A ReAct Gen AI Joke Agent
 Medium stories
 1. [A ReAct Gen AI Joke Agent — Background and Design](https://medium.com/@yuxiaojian/a-react-gen-ai-joke-agent-background-and-design-b46618ba8c5c)
-2. [A ReAct Gen AI Joke Agent — The Code]()
+2. [A ReAct Gen AI Joke Agent — The Code](https://medium.com/@yuxiaojian/a-react-gen-ai-joke-agent-the-code-fc48a27db16a)
 
 ## Overview
 The ReAct Agent is build with ![Streamlit](images/streamlit.png)Streamlit, 🦜🕸️ LangGraph and OpenAI Models
